@@ -15,8 +15,10 @@ namespace rhm {
     {c.size()} -> std::convertible_to<size_t>;
   };
 
+  /* Not used. See discussion at ring_buffer::push_imp() below.
   template<typename CT> // todo could constrain CT to StdContainerType, and also check for CT::value_type
   concept ContainerTypeHasPushBack = requires (CT c, typename CT::value_type item) { c.push_back(item); };
+  */
 
 /** @brief Adapts a container type (see requirements below) into a very simple ring buffer.
 
@@ -158,7 +160,10 @@ public:
     ++curSize;
   }
 
+
 private:
+  /* Two different push_imp() implementations The commented out onen uses the HasPushBack concept defined above, chooses a push_imp() template via sfinae 
+     and matching ContainerT to HasPushBack or note.  The second one just uses constexpr to require push_back().
 
   // This template function is used only if the container type (ContainerT) has a push_back() method. 
   template<ContainerTypeHasPushBack CT>
@@ -195,6 +200,30 @@ private:
     *back_it = item;
     advance_back();
   }
+  */
+
+  void push_imp(ContainerT& cont, const ItemT& item)
+  {
+    constexpr bool has_push_back = requires(ContainerT c, ItemT v) { c.push_back(v); };
+    if constexpr(has_push_back) {
+      if(cont.size() < Capacity) // todo also need consteval check for push_back function, throw or assert if we don't
+      {
+        cont.push_back(item);
+        front_it = cont.begin();
+        back_it = cont.end();
+        ++curSize;
+        return;
+      }
+    }
+    if(curSize == Capacity)
+      advance_front(); // throw away the item at the front, no longer full, curSize == Capacity-1; when we advance_back(), then back_it will again be correct.
+    if(back_it == cont.end()) // no longer filling container to capacity, need to "wrap around"
+      back_it = cont.begin(); 
+    *back_it = item;
+    advance_back();
+  }
+
+
 
 public:
   /** Push a new item.  If the buffer is full, then the oldest item is replaced with the new item.  If the current size of the container is not yet at capacity, and the container type (ContainerT) has a push_back() method, then push the item (and increase the size of the container) with push_back(). 
