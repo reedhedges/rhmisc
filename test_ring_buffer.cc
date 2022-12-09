@@ -10,7 +10,7 @@
 template <typename ContainerT, size_t Cap>
 void basic_test()
 {
-  rhm::ring_buffer<int, Cap, ContainerT> buf;
+  rhm::ring_buffer<Cap, ContainerT> buf;
   printf("Empty: ");
   std::cerr << buf << '\n';
   //std::cerr << buf << '\n';
@@ -79,8 +79,8 @@ void basic_test()
 
 int main()
 {
-  //puts("std::array:");
-  //basic_test<std::array<int, 10>, 10>();
+  puts("std::array:");
+  basic_test<std::array<int, 10>, 10>();
   puts("\nstd::vector:");
   basic_test<std::vector<int>, 10>();
   puts("\nstd::list:");

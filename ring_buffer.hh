@@ -1,64 +1,92 @@
 #pragma once
 
 #include <iostream>
-#include <array>
 #include <iterator>
 
 namespace rhm {
 
+
+  // Test that type T has begin() and end() that return iterators, and a size() method that returns size_t.
+  template<typename T>
+  concept StdContainerType = requires (T c) {
+    // todo check for T::iterator
+    {c.begin()} -> std::same_as<typename T::iterator>;
+    {c.end()} -> std::same_as<typename T::iterator>;
+    {c.size()} -> std::convertible_to<size_t>;
+  };
+
+  template<typename CT> // todo could constrain CT to StdContainerType, and also check for CT::value_type
+  concept ContainerTypeHasPushBack = requires (CT c, typename CT::value_type item) { c.push_back(item); };
+
 /** @brief Adapts a container type (see requirements below) into a very simple ring buffer.
 
-    A maximum size (capacity) is maintained, and 
-    memory can be reused as items are removed (popped) from the front and added (pushed)
-    to the back. If the buffer is full (at capacity), then old items are replaced by new items (via the assignment operator).   
+    A maximum size (capacity) is maintained, and memory can be reused as items are removed (popped) 
+    from the front and added (pushed) to the back. If the buffer is full (at capacity), then old 
+    items are replaced by new items (via the assignment operator).   
 
-    Specify a standard container type as the ContainerT parameter such as std::array, std::vector, or any other type providing standard iterator interface as the underlying storage.
-    For example, if std::array is used as ContainerT, then all memory is stored in a fixed size condiguous array inside this object, and no heap allocation is needed. The 
-    ring buffer Capacity parameter should be specified as the same as the std::array size, and new items will begin to replace old items as soon as the buffer reaches the capacity.
-    If std::array is used, the a small ring buffer can be efficiently kept in a stack object rather than allocated on the heap.
-    Or, if std::vector is used, or any other item whose size increments as items are added with push_back(),  new items are added with push_back() until the size of the 
-    container reaches the given Capacity, in which case the ring buffer will begin reusing the memory previously used in the std::vector, replacing old items.  I.e. the size of
-    the vector will be expanded as usual until reaching Capacity.  
+    Specify a standard container type as the ContainerT parameter such as std::array, std::vector,
+    or any other type providing standard iterator interface as the underlying storage.
 
-    The underlying container object can be accessed as @a container after the ring_buffer is created. (For example,
-    to choose an initial size with reserve(), or similar.)   The container type given as ContainerT should support the following:
+    For example, if std::array is used as ContainerT, then all memory is stored in a fixed size 
+    contiguous array inside this object, and no heap allocation is needed. The ring buffer Capacity
+    parameter should be specified as the same as the std::array size, and new items will begin to
+    replace old items as soon as the buffer reaches the capacity.  If std::array is used, then a
+    small ring buffer can be efficiently kept in a stack object rather than allocated on the heap.
+    Or, if std::vector is used, or any other container whose size increases as items are added with
+    push_back(), new items are added with push_back() until the size of the container reaches the
+    given Capacity, in which case the ring buffer will begin reusing the memory previously used in
+    the std::vector, replacing old items.  I.e. the size of the std::vector will be expanded as
+    usual using std::vector::push_back() until reaching Capacity.  
+
+    The container type given as ContainerT should support the following:
+      * Must define the contained value type as value_type. E.g. std::array<int, 10> defines value_type as int.
       * Provide iterators via begin() and end().
       * Provide a size via size().
-      * Optionally provide a push_back() method if it can be expanded (until size() == Capacity).  If it does not have a push_back() method, then this feature will not be used and only the container's current size is used.
+      * Optionally provide a push_back() method if it can be expanded (until size() == Capacity).  
+        If it does not have a push_back() method, then this feature will not be used and only the
+        container's current size is used; will begin replacing items when the container's size is
+        reached.  (For example, a std::array with size N should be used with ring_buffer capacity N.)
 
-    Items may be added to the ring_buffer with push() or emplace(), and
-    the oldest item still available can be accessed from the front with pop() or front().  (But most recent item cannot be accessed from the back.)
-    If an old item is replaced by a new item by push(), then T's copy or move assignment operator is used to replace the item.   If replaced by emplace(), then the copy or move constructor is used.
+    The underlying container object can be accessed as @a container after the ring_buffer is created.
+    (For example, to choose an initial size with reserve(), or similar.)  Do not perform any operations
+    with @a container that may invalidate iterators stored by ring_buffer after you have begun 
+    adding/removing items to/from the ring_buffer.
+
+    Items may be added to the ring_buffer with push() or emplace(), and the oldest item still available
+    can be accessed from the front with pop() or front().  (But most recent item cannot be accessed
+    from the back.) If an old item is replaced by a new item by push(), then T's copy or move
+    assignment operator is used to replace the item. 
   
-    Note: a std::containeray is used internally, so the size of an ring_buffer object is fixed at Capacity * sizeof(T) + a few pointers and size. (two iterators and size_t).  So a very large ring_buffer should be allocated and stored as a pointer (e.g. use std::make_unique or std::make_shared.) But smaller ring_bufferObjects can be stored on the stack (e.g. as regular data members of a class.) 
+    @note If reset() is called or items are popped(), old items are not destroyed (destructors not
+    called).  Destructors may be called if the item is later replaced by a new item. 
   
-    Note: currently if reset() is called or items are popped(), old items are not 
-    destroyed (destructors not called).  Destructors may be called if the item is later replaced by a new item. 
-  
-    Note: This implementation is not thread safe; it is not designed or optimized for simultaneous reads and writes from different threads. (A mutex lock or similar may be required.) A future version could do this.
-  
-    @todo Ideally, this class would be fully threadsafe/non-locking (or with occasional
-    mutex locking in certain cases), but it is not currently. Should be updated to use
-    atomic support in modern C++ standard library if possible, e.g. <https://rigtorp.se/ringbuffer/>
-  
+    @note This implementation is not thread safe; it is not designed or optimized for simultaneous
+    reads and writes from different threads. (A mutex lock or similar may be required.) A future
+    version could do this. E.g. use atomics (e.g. see <https://rigtorp.se/ringbuffer/>)
+
+    @note Requires C++20 mode when compiling.
  */
-template<class ItemT, size_t Capacity, class ContainerT = std::array<ItemT, Capacity>>
-class ring_buffer {
+template<size_t Capacity, StdContainerType ContainerT>
+class ring_buffer 
+{
+
+    using ItemT = typename ContainerT::value_type;
+
 public:
 
   ring_buffer() : curSize(0), front_it(container.end()), back_it(container.begin())
-    // note front_it at end indicates empty state
-  {
-  }
+  {}
+
+  // todo constructors and operator=
 
 
   /** Get an iterator for the front item (the item that would
-   * be returned by pop()). If the buffer is currently empty, nil() will be
-   * returned.
-   * 
-   * To remove an item without
-   * making a copy with pop(), first check if the buffer is empty(). Then  use this 
-   * function to get the data. Then call advance_front(). 
+      be returned by pop()). If the buffer is currently empty, nil() will be
+      returned.
+      
+      To remove an item without
+      making a copy with pop(), first check if the buffer is empty(). Then use this 
+      function to get the data. Then call advance_front(). 
    */
   typename ContainerT::iterator front() {
     if(front_it == container.end() || curSize == 0) // empty 
@@ -67,16 +95,16 @@ public:
   }
 
   /** Get an iterator for the back of the bufer (the item that would be
-   * replaced by push()). This is not the last item, rather it is the
-   * next, unused, "slot".  If the buffer is full, an iterator equivalent to that
-   * returned by nil() is returned.
-   * @TODO maybe rename to end. maybe also provide a last() accessor?
-   *
-   * To add an item to the buffer without pushing
-   * a copy with push(), first check if the buffer is full (in which case you
-   * must push() your item). Then use this function to write the data into the
-   * next unused 'slot'. Then call advance_back() to advance the back of the buffer
-   * to your new item. 
+      replaced by push()). This is not the last item, rather it is the
+      next, unused, "slot".  If the buffer is full, an iterator equivalent to that
+      returned by nil() is returned.
+      @TODO maybe rename to end. maybe also provide a last() accessor?
+    
+      To add an item to the buffer without pushing
+      a copy with push(), first check if the buffer is full (in which case you
+      must push() your item). Then use this function to write the data into the
+      next unused 'slot'. Then call advance_back() to advance the back of the buffer
+      to your new item. 
    */
   typename ContainerT::iterator back() {
     if(front_it == back_it)
@@ -130,25 +158,50 @@ public:
     ++curSize;
   }
 
-  /** Push a new item.  If the buffer is full, then the oldest item is replaced with the new item.  */
-  void push(const ItemT& item) 
+private:
+
+  // This template function is used only if the container type (ContainerT) has a push_back() method. 
+  template<ContainerTypeHasPushBack CT>
+  void push_imp(CT& cont, const typename CT::value_type& item)
   {
-    // push_back to expand container if neccesary and possible
-    if(container.size() < Capacity) // todo also need consteval check for push_back function, throw or assert if we don't
+    if(cont.size() < Capacity) // todo also need consteval check for push_back function, throw or assert if we don't
     {
-      container.push_back(item);
-      front_it = container.begin();
-      back_it = container.end();
+      cont.push_back(item);
+      front_it = cont.begin();
+      back_it = cont.end();
       ++curSize;
       return;
     }
+
+    // otherwise same as default (no push_back) implementation
+    default_push_imp(cont, item);
+  }
+
     
+  // this template is used for any container type (i.e. doesn't have a push_back() method)
+  template<typename CT>
+  void push_imp(CT& cont, const typename CT::value_type& item)
+  {
+    default_push_imp(cont, item);
+  }
+
+  template<typename CT>
+  void default_push_imp(CT& cont, const typename CT::value_type& item)
+  {
     if(curSize == Capacity)
       advance_front(); // throw away the item at the front, no longer full, curSize == Capacity-1; when we advance_back(), then back_it will again be correct.
-    if(back_it == container.end()) // no longer filling container to capacity, need to "wrap around"
-      back_it = container.begin(); 
+    if(back_it == cont.end()) // no longer filling container to capacity, need to "wrap around"
+      back_it = cont.begin(); 
     *back_it = item;
     advance_back();
+  }
+
+public:
+  /** Push a new item.  If the buffer is full, then the oldest item is replaced with the new item.  If the current size of the container is not yet at capacity, and the container type (ContainerT) has a push_back() method, then push the item (and increase the size of the container) with push_back(). 
+  */
+  void push(const ItemT& item) 
+  {
+    push_imp(container, item);
   }
 
   /** Push a new item.  If the buffer is full, then the oldest item is replaced with the new item.  */
@@ -178,8 +231,8 @@ public:
   {
     std::cerr << *this << '\n';
   }
-  template<typename T, size_t C, class CT> 
-  friend std::ostream& operator<<(std::ostream& os, const ring_buffer<T, C, CT>& rb);
+  template<size_t Cap, class CT> 
+  friend std::ostream& operator<<(std::ostream& os, const ring_buffer<Cap, CT>& rb);
 
   /** Get the number of items currently in the buffer. */
   size_t size() const {
@@ -198,9 +251,9 @@ public:
   }
 
   /** Logically clear the bufer, resetting to initial empty state
-   * The contents are not
-   * destroyed, and will remain in the container (but inaccessible through ring_buffer::pop()), and will be replaced as new items are pushed into the ring_buffer.
-   * The current allocated capacity of the container is retained.
+      The contents are not
+      destroyed, and will remain in the container (but inaccessible through ring_buffer::pop()), and will be replaced as new items are pushed into the ring_buffer.
+      The current allocated capacity of the container is retained.
    */
   void reset() {
     // todo should we also have a clear()?
@@ -215,7 +268,7 @@ public:
   }
 
   /** Return an iterator representing an invalid item. Compare to the return
-   * values of front(), back(), pop(), etc. */
+      values of front(), back(), pop(), etc. */
   typename ContainerT::iterator nil() {
     return container.end();
   }
@@ -237,8 +290,8 @@ public:
 
 /** Output the current contents of the buffer.   Items are printed as they appear in the container, with the current position and size of the ring buffer marked with square brackets.
 */
-template<typename ItemT, size_t Capacity, class ContainerT>
-inline std::ostream& operator<<(std::ostream& os, const ring_buffer<ItemT, Capacity, ContainerT>& rb)
+template<size_t Capacity, class ContainerT>
+inline std::ostream& operator<<(std::ostream& os, const ring_buffer<Capacity, ContainerT>& rb)
 {
   //printf("container.begin()=0x%p container.end()=0x%p container.size()=%d curSize=%lu\n", container.begin(), container.end(), container.size(), curSize);
   if(rb.container.begin() == rb.container.end())
