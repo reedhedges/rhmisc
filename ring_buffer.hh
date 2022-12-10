@@ -9,7 +9,7 @@ namespace rhm {
   // Test that type T has begin() and end() that return iterators, and a size() method that returns size_t.
   template<typename T>
   concept StdContainerType = requires (T c) {
-    // todo check for T::iterator
+    // todo could check for more abstract concepts than just the iterator type. 
     {c.begin()} -> std::same_as<typename T::iterator>;
     {c.end()} -> std::same_as<typename T::iterator>;
     {c.size()} -> std::convertible_to<size_t>;
@@ -20,7 +20,7 @@ namespace rhm {
   concept ContainerTypeHasPushBack = requires (CT c, typename CT::value_type item) { c.push_back(item); };
   */
 
-/** @brief Adapts a container type (see requirements below) into a very simple ring buffer.
+/** @brief Adapts a container type (see requirements below) into a very simple FIFO ring buffer.
 
     A maximum size (capacity) is maintained, and memory can be reused as items are removed (popped) 
     from the front and added (pushed) to the back. If the buffer is full (at capacity), then old 
@@ -67,20 +67,62 @@ namespace rhm {
     version could do this. E.g. use atomics (e.g. see <https://rigtorp.se/ringbuffer/>)
 
     @note Requires C++20 mode when compiling.
+
+    @todo front/back naming might be confusing for a FIFO buffer since we add to back and pop from front, but this matches other containers.
+
  */
 template<size_t Capacity, StdContainerType ContainerT>
 class ring_buffer 
 {
 
-    using ItemT = typename ContainerT::value_type;
+  using ItemT = typename ContainerT::value_type;
 
 public:
 
   ring_buffer() : curSize(0), front_it(container.end()), back_it(container.begin())
   {}
 
-  // todo constructors and operator=
+  ring_buffer(const ring_buffer<Capacity, ContainerT>& other) :
+    container(other.container),
+    curSize(other.curSize), 
+    front_it(other.front_it == other.container.end() ? container.end() : (container.begin() + std::distance(other.container.begin(), typename ContainerT::const_iterator{other.front_it}))),
+    back_it(container.begin() + std::distance(other.container.begin(), typename ContainerT::const_iterator{other.back_it}))
+  { }
 
+  ring_buffer<Capacity, ContainerT> & operator=(const ring_buffer<Capacity, ContainerT>& other) 
+  {
+    if(&other == this) [[unlikely]] return *this;
+    container = other.container;
+    curSize = other.curSize;
+    front_it = other.front_it == other.container.end() ? container.end() : (container.begin() + std::distance(other.container.begin(), typename ContainerT::const_iterator{other.front_it}));
+    back_it = other.front_it == other.container.end() ? container.end() : (container.begin() + std::distance(other.container.begin(), typename ContainerT::const_iterator{other.back_it}));
+    return *this;
+  }
+
+  ring_buffer<Capacity, ContainerT> & operator=(ring_buffer<Capacity, ContainerT>&& old) 
+  {
+    if(&old == this) [[unlikely]] return *this;
+    auto old_front_pos = std::distance(old.container.begin(), old.front_it);
+    auto old_back_pos = std::distance(old.container.begin(), old.back_it);
+    container = std::move(old.container);
+    curSize = old.curSize;
+    front_it = container.begin() + old_front_pos;
+    back_it = container.begin() + old_back_pos;
+    return *this;
+  }
+
+  ring_buffer(ring_buffer<Capacity, ContainerT>&& old) 
+  { 
+    auto old_front_pos = std::distance(old.container.begin(), old.front_it);
+    auto old_back_pos = std::distance(old.container.begin(), old.back_it);
+    container = std::move(old.container);
+    curSize = old.curSize;
+    front_it = container.begin() + old_front_pos;
+    back_it = container.begin() + old_back_pos;
+  }
+
+  // todo allow construction/assignment with different capacities, truncate from front for smaller capacity or copy into front of new container for larger?
+  // todo conversions that copy items between ring_buffers with different container types?
 
   /** Get an iterator for the front item (the item that would
       be returned by pop()). If the buffer is currently empty, nil() will be
@@ -205,7 +247,8 @@ private:
   void push_imp(ContainerT& cont, const ItemT& item)
   {
     constexpr bool has_push_back = requires(ContainerT c, ItemT v) { c.push_back(v); };
-    if constexpr(has_push_back) {
+    if constexpr(has_push_back) 
+    {
       if(cont.size() < Capacity) // todo also need consteval check for push_back function, throw or assert if we don't
       {
         cont.push_back(item);
@@ -251,6 +294,14 @@ public:
     advance_back();
   }
 */
+
+  /** Fill buffer to capacity with given value. */
+  void fill(const ItemT& value)
+  {
+    reset();
+    while(!full())
+       push(value);
+  }
 
   /** Print contents to stderr. 
       @see operator<<(std::ostream&, const ring_buffer&)
@@ -303,16 +354,14 @@ public:
   }
 
 
+public:
+  ContainerT container;
+
 private:
   size_t curSize;
-  typename ContainerT::iterator front_it, back_it;   
+  typename ContainerT::iterator front_it, back_it;   // note need to be after container so that copy/move constructors/operators can refer to container member when assigning these
   // push to back, pop from front; front will point to first item, 
   // back to one past last. 
-
-
-public:
-
-  ContainerT container;
 
 };
 
