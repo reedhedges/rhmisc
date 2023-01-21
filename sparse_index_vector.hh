@@ -1,4 +1,4 @@
-
+?
 #pragma once
 
 #include <vector>
@@ -12,7 +12,7 @@ namespace rhm {
   @todo an iterator adapter of some kind that creates and returns std::pair<size_t, ValueT>'s (in Aria this would really just be for compatability with existing std::maps and std::multimaps)
   @todo most accessors could be made constexpr, if only supporting C++20+  (or multiple versions of them?)
   @todo insert() does a linear search to find the right position to insert the new value. we could check the size of the vector and do
-   this for small vectors, and do a binary search of the indices for larger vectors.  Or what about a more parallel search (e.g. simd comparisons)?
+   this for small vectors, and do a binary search of the indices for larger vectors.  Or what about a more parallel search? (e.g. simd/vector comparisons, use unseq or par_unseq or par execution policy with std::find_if, also dependent on amount of data?)
 */
 
 
