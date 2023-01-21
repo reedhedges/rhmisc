@@ -18,9 +18,9 @@ macro(add_build_types)
   # TODO also check C compiler id?
   # TODO add option to enable certain sanitizers/safety features on normal Release and Debug modes, which are suitible for actual release without as much performance impact as others.
 
-  set(debug_compile_options "-g -Og")
-  set(release_compile_options "-O3")
-  set(minsizerel_compile_options "-Os")
+  set(debug_compile_options -g -Og)
+  set(release_compile_options -O3)
+  set(minsizerel_compile_options -Os)
 
   if(CMAKE_BUILD_TYPE MATCHES "MinSizeRel.*")
     add_compile_options(${minsizerel_compile_options})
