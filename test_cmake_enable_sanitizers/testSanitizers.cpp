@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cstdio>
 
+
 // leak
 char *leak()
 {
@@ -27,21 +28,39 @@ void null_ptr()
 // increment pointer beyond our stack, read from pointer to unallocated memory (but a reasonable pointer?)
 void read_unalloc2()
 {
-  int x[4];
-  int *p = x;
+  int x = 0;
+  int *p = &x;
   p += 4;
   int y = *p;
 }
+
+// increment pointer beyond allocated memory, read
+void read_unalloc3()
+{
+  int *p = new int[2];
+  ++p; // p[1]
+  ++p; // p[2], one off
+  int y = *p;
+  delete[] p;
+}
+  
 
 
 // write to unallocated memory (UB will probably manifest here, crash or otherwise.)
 void write_unalloc()
 {
-  int pre[4];
   int *p;
-  int post[4];
   *p = 23;
 }
+
+// write to unallocated memory
+void write_unalloc2()
+{
+  int *p = new int[2];
+  p[5] = 23;
+  delete[] p;
+}
+
 
 // read uninitialized memory
 void read_uninit()
@@ -49,9 +68,12 @@ void read_uninit()
   char *buf = (char*)malloc(10);
   char x = buf[2];
   //printf("%c\n", x);
+  free(buf);
 }
   
-char *violate_nonnull_return() __attribute__((returns_nonnull))
+char *violate_nonnull_return() __attribute__((returns_nonnull));
+
+char *violate_nonnull_return()
 {
   return NULL;
 }
@@ -66,13 +88,20 @@ void overflow()
   ++n;
 }
 
-void array_bounds()
+void stack_array_bounds()
 {
   int pre[4];
   int a[5];
   int post[4];
   a[5] = 23; // one past
   //a[-1] = 42; // one before?
+}
+
+void heap_array_bounds()
+{
+  int *a = new int[5];
+  a[5] == 23; // one past
+  delete[] a;
 }
 
 void div_by_zero()
@@ -101,14 +130,30 @@ int no_return_val()
 {
 }
 
+void wrong_delete1()
+{
+  int *a = new int[5];
+  delete a;
+}
+
+void wrong_delete2()
+{
+  int *a = new int;
+  delete[] a;
+}
+
 int main()
 {
   puts("--------\ntestSanitizers begin...");
   //no_return_val();
-  puts("...overflow...");
+  puts("...integer value overflow...");
   overflow();
+  puts("...wrong delete 1...");
+  wrong_delete1();
+  puts("...wrong delete 2...");
+  wrong_delete2();
   puts("...array out of bounds...");
-  array_bounds();
+  stack_array_bounds();
   puts("...divisions by zero...");
   div_by_zero();
   //puts("...bad cast and call of function pointer...");
@@ -124,10 +169,14 @@ int main()
   char *l = leak();
   puts("...read from unallocated memory 1 (uninitialized pointer)...");
   read_unalloc1();
-  puts("...read from unallocated memory 2 (update pointer beyond valid memory)...");
+  puts("...read from unallocated memory 2 (update pointer beyond valid stack memory, read)...");
   read_unalloc2();
-  //puts("...write to unallocated memory (things will probbaly go bad here...");
-  //write_unalloc();
+  puts("...read from unallocated memory 3 (update pointer beyond valid heap memory, read)...");
+  read_unalloc3();
+  puts("...write to unallocated memory (things will probbaly go bad here...");
+  write_unalloc2();
+  puts("...write to unallocated memory (things will probbaly go bad here...");
+  write_unalloc();
   puts("...use null pointer...");
   null_ptr();
   puts("--------\ntestSanitizers done.");

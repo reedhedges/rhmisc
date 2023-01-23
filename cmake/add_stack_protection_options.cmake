@@ -1,0 +1,20 @@
+
+# Adds stack protection compile time options (detect stack smashing bugs and potential security holes)
+# TODO also check C compiler ID
+option(ENABLE_STACK_PROTECTION_OPTIONS "Enable stack protection compile time options (stack-protector, shstkc, stack sanitizer, cfi, branch protection, etc.)" ON)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  set(stack_protection_compile_options -fstack-protector-strong -mshstk -fcf-protection=full)
+  #?  -mbranch-protection=standard)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
+  set(stack_protection_compile_options -fstack-protector-strong -fsanitize=safe-stack -fcf-protection=full -mbranch-protection=standard)
+  # TODO add this if LTO is enabled: -fsanitize=cfi)
+  set(stack_protection_link_options -fsanitize=safe-stack)
+endif()
+if(CMAKE_BUILD_TYPE MATCHES "Rel.*" OR CMAKE_BUILD_TYPE EQUAL "MinSizeRel") # FORTIFY_SOURCE works for optimized builds only?
+  list(APPEND stack_protection_compile_options -D_FORTIFY_SOURCE=2)
+endif()
+message(STATUS "${PROJECT_NAME}: add_stack_protection_compile_options(): Adding options: ${stack_protection_compile_options}")
+add_compile_options(${stack_protection_compile_options})
+if(stack_protection_link_options)
+  add_link_options(${stack_protection_link_options})
+endif()
