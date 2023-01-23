@@ -11,7 +11,10 @@ include(../cmake/add_build_types.cmake)
 add_build_types()
 
 include(CTest)
+
 add_executable(testSanitizers testSanitizers.cpp)
 add_test(NAME testSanitizers COMMAND testSanitizers)
 
-
+add_executable(testThreadSanitizer testThreadSanitizer.cpp)
+add_test(NAME testThreadSanitizer COMMAND testThreadSanitizer)
+target_link_libraries(testThreadSanitizer PRIVATE pthread)
