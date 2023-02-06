@@ -7,6 +7,7 @@ namespace rhm {
 
 
   // Test that type T has begin() and end() that return iterators, and a size() method that returns size_t.
+  // TODO check if there is an equivalent concept already defined in the standard library.
   template<typename T>
   concept StdContainerType = requires (T c) {
     // todo could check for more abstract concepts than just the iterator type. 
