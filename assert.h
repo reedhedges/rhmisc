@@ -70,7 +70,7 @@ namespace rhm
   namespace _private
   {
             
-    std::string_view assertion_type_to_string(assertion_type t) {
+    inline std::string_view assertion_type_to_string(assertion_type t) {
         switch(t) {
             case assertion: return "Assertion";
             case precondition: return "Precondition";
@@ -84,7 +84,7 @@ namespace rhm
         #endif
     }
 
-    [[noreturn]] void assert_fail(const char *expression, const char *file, unsigned int line, const char *function, rhm::assertion_type assert_type) // todo stack trace
+    [[noreturn]] inline void assert_fail(const char *expression, const char *file, unsigned int line, const char *function, rhm::assertion_type assert_type) // todo stack trace
     {
       std::string msg = fmt::format("{}:{} : {}: {} ({}) failed. [{} +{}]", file, line, function, assertion_type_to_string(assert_type), expression, file, line);
       // todo add color code characters if we might be running in a terminal (check environment variables or other hints.)
