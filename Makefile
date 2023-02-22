@@ -1,8 +1,6 @@
 
-ALL_TARGETS=tree_to_range tree_to_range_benchmark test_assert 
-#test_sparse_index_vector
-#test_append_to_string_literal 
-#test_sparse_index_vector
+ALL_TARGETS=tree_to_range tree_to_range_benchmark test_assert test_sparse_index_vector test_append_to_string_literal 
+
 
 all: $(ALL_TARGETS)
 
@@ -32,13 +30,13 @@ info:
 help:
 	@echo Targets are: all info help conan clean distclean conan-clean
 
-conanbuildinfo.args conanbuildinfo.mak &: conanfile.txt
-	conan install conanfile.txt
+conanbuildinfo.args conanbuildinfo.mak conanbuildinfo.txt &: conanfile.txt
+	conan install conanfile.txt && touch $@    # conan doesn't update file timestamp if no new contents were generated (even if conanfile.txt is newer)
 
 conan: conanbuildinfo.mak
 
 conan-clean:
-	-rm conanbuildinfo.args conanbuildinfo.mak conanbuildinfo.txt conaninfo.txt conan.lock
+	-rm conanbuildinfo.args conanbuildinfo.mak conanbuildinfo.txt conaninfo.txt conan.lock graph_info.json
 
 tree_to_range_benchmark: tree_to_range.cc
 	$(CXX) -g -O3 -std=c++20 -Wall -Wextra -DENABLE_BENCHMARK $(FMT_CXXFLAGS) $(BENCH_CXXFLAGS) -o $@ $< $(FMT_LFLAGS) $(BENCH_LFLAGS)
@@ -46,5 +44,5 @@ tree_to_range_benchmark: tree_to_range.cc
 %: %.cc
 	$(CXX) -g -Og -std=c++20 -Wall -Wextra $(FMT_CXXFLAGS) -o $@ $< $(FMT_LFLAGS)
 
-.PHONY: all conan clean distclean conan-clean
+.PHONY: all conan clean distclean conan-clean help
 

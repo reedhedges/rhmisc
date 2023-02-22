@@ -12,7 +12,7 @@
 
 # TODO option to check cmake options rather than build types.
 # TODO add thread sanitizer mode
-# TODO do something correct for "Multi-Config" makefile generation. Use generator expressions instead of checking CMAKE_BUILD_TYPE.
+# TODO do something correct for "Multi-Config" makefile generation. Use generator expressions instead of checking CMAKE_BUILD_TYPE?
 # TODO check for MSVC
 # TODO also check C compiler id?
 # TODO add option to enable certain sanitizers/safety features on normal Release and Debug modes (rather than ...With...Sanitizers modes) , which are suitible for actual release without as much performance impact as others.

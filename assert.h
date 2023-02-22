@@ -9,6 +9,8 @@
    If std::source_location is available (C++20) then it will be used instead of the old __FILE__, __LINE__ and __PRETTY_FUNCTION__ macros.
    (Note, rhm_assert etc. are still macros so we can get a string representation of the checked expression.)
    Requires fmt library.
+
+  * TODO add easy integration point with a logging facility.
 */
 
 #include <exception>
@@ -18,7 +20,7 @@
 #include <string_view>
 #include <optional>
 
-#include <fmt/format.h> // todo replace with std::format once gcc and clang that support it are more widely available (gcc 13, clang 14, msvc 19.29).
+#include "fmt/format.h" // todo replace with std::format once gcc and clang that support it are more widely available (gcc 13, clang 14, msvc 19.29).
 
 #if __has_include("stacktrace")
 #include <stacktrace>
