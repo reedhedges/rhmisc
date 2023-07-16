@@ -78,9 +78,13 @@ class FileChunkReader;
 
 
 
-class FileChunkIteratorSentinel
-{
-};
+// You can use any class (type) as a sentinel, but since all we need is return it
+// from end() and then compare it against FileChunkIterators to test for end, we
+// can use an empty class. The standard library provides one called default_sentinel_t so
+// we will use that below instead of this:
+//class FileChunkIteratorSentinel
+//{
+//};
 
 
 
@@ -96,7 +100,7 @@ public:
     using pointer = value_type*;
 
 private:
-    FILE *fp;
+    FILE* fp = nullptr;
     int delimiter = 0;
     char *buf = nullptr; // allocated by getdelim(), but we must free in destructor
     size_t buflen = 0;
@@ -225,8 +229,8 @@ public:
       return feof(fp);
     }
 
-    // This is how end of the iteration is detected (e.g. 'if(i == std::end(reader))': The FileChunkIterator 'i' is the same as 'end()' (which returns a FileChunkIteratorSentinel) if it is at EOF.
-    friend bool operator==(const FileChunkIterator& i, const FileChunkIteratorSentinel&) noexcept
+    // This is how end of the iteration is detected (e.g. 'if(i == std::end(reader))': The FileChunkIterator 'i' is the same as 'end()' (which returns a std::default_sentinel_t) if it is at EOF.
+    friend bool operator==(const FileChunkIterator& i, const std::default_sentinel_t&) noexcept
     {
       return i.eof();
     }
@@ -311,10 +315,10 @@ public:
     return FileChunkIterator(fp, delimiter);
   }
 
-  FileChunkIteratorSentinel end()
+  std::default_sentinel_t end()
   {
     // todo should we also pass in fd so that FileChunkIterator::operator==() can check that too?
-    return FileChunkIteratorSentinel{};
+    return std::default_sentinel;  // this is just a global constant instance of default_sentinel_t.
   }
 
 };
@@ -323,7 +327,7 @@ public:
 namespace std 
 {
   FileChunkIterator begin(FileChunkReader& r) { return r.begin(); }
-  FileChunkIteratorSentinel end(FileChunkReader& r) { return r.end(); }
+  std::default_sentinel_t end(FileChunkReader& r) { return r.end(); }
 };
 
 
