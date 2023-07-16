@@ -33,8 +33,8 @@
 //
 //
 //  Currently multiple FileChunkIterators can separately iterate through the data of the same open file (open file is represented by
-//  FileChunkReader which also provides new begin and end FileChunkIterators; each iterator contains its own file access handle FileHandle
-//  (just a FILE* wrapper).  Each FileChunkIterator when advanced reads the next chunk into its own buffer, which can be accessed with
+//  FileChunkReader which also provides new begin and end FileChunkIterators; each iterator contains its own FILE* stream pointer.
+//  Each FileChunkIterator when advanced reads the next chunk into its own buffer, which can be accessed with
 //  operator*.  
 //
 //  An alternative design would be instead for FileChunkReader to be the only reader of the file, reading new data on request from
@@ -73,73 +73,6 @@
 
 
 
-// Just wraps a FILE* stream, given a file descriptor. The state of the new stream (position, errors) is reset so it can be used
-// to begin reading from the beginning of the file. 
-// (Note does not call fclose() on destruction, this would close the underlying file descriptor, and shouldn't be neccesary.)
-// File can only be read, not written.
-// Maybe this could be replaced with fstream.
-struct FileHandle
-{
-  FILE *fp = nullptr;
-
-private:
-  FILE* openstream(int fd) const noexcept
-  {
-    FILE *newfp = fdopen(fd, "r");
-    clearerr(newfp);
-    rewind(newfp);
-    return newfp;
-  }
-
-public:
-
-  explicit FileHandle(int fd) 
-  {
-    fp = openstream(fd);
-  }
-
-  // copies: A new FILE* is opened from the same file descriptor as the other FileHandle, 
-  // same as FileHandle(fileno(other.fp));
-  FileHandle(const FileHandle& other) 
-  {
-    fp = openstream(fileno(other.fp));
-  }
-
-  FileHandle& operator=(const FileHandle& other) 
-  {
-    fp = openstream(fileno(other.fp));
-    return *this;
-  }
-    
-  FileHandle(FileHandle&& old) 
-  {
-    fp = old.fp;
-    old.fp = nullptr;
-  }
-
-  FileHandle& operator=(FileHandle&& old)
-  {
-    if(&old != this)
-    {
-      fp = old.fp;
-      old.fp = nullptr;
-    }
-    return *this;
-  }
-
-  bool operator==(const FileHandle& other) const noexcept { return (other.fp == fp); }
-
-  // not needed ~FileHandle() { if(fp) fclose(fp); }
-
-  FILE* operator*() { return fp; }
-
-  bool eof() const { return feof(fp); }
-};
-
-
-
-
-
 
 class FileChunkReader;
 
@@ -163,7 +96,7 @@ public:
     using pointer = value_type*;
 
 private:
-    FileHandle file;
+    FILE *fp;
     int delimiter = 0;
     char *buf = nullptr; // allocated by getdelim(), but we must free in destructor
     size_t buflen = 0;
@@ -172,15 +105,8 @@ private:
 public:
 
     // note, reads first line, may throw
-    FileChunkIterator(FileHandle file_, int delim_) : 
-        file(std::move(file_)), delimiter(delim_)
-    {
-      read_line();
-    }
-
-    // note, reads first line, may throw
-    FileChunkIterator(int fd_, int delim_) :
-        file(fd_), delimiter(delim_)
+    FileChunkIterator(FILE* fp_, int delim_) :
+        fp(fp_), delimiter(delim_)
     {
       read_line();
     }
@@ -188,7 +114,7 @@ public:
     // copy (also copies buffer from other):
 
     FileChunkIterator(const FileChunkIterator& other)  :
-      file(other.file), // should open new FILE*
+      fp(other.fp),
       delimiter(other.delimiter),
       buflen(other.buflen),
       counter(other.counter)
@@ -208,7 +134,7 @@ public:
     // move:
 
     FileChunkIterator(FileChunkIterator&& old) noexcept :
-        file(std::move(old.file)),
+        fp(old.fp),
         delimiter(old.delimiter),
         buf(old.buf),
         buflen(old.buflen)
@@ -237,7 +163,7 @@ private:
     void read_line()
     {
       // todo error if file at eof. (throw?)
-      ssize_t r = getdelim(&buf, &buflen, delimiter, file.fp);
+      ssize_t r = getdelim(&buf, &buflen, delimiter, fp);
       if(r == -1) [[unlikely]]
       {
         // causes operator* to return a null string view:
@@ -245,7 +171,7 @@ private:
         buf = NULL;
         buflen = 0;
 
-        if(file.eof())
+        if(feof(fp))
         {
           //eof = true;
         }
@@ -291,12 +217,12 @@ public:
     friend bool operator==(const FileChunkIterator& lhs, const FileChunkIterator& rhs) noexcept
     {
       // good comparison?
-      return (lhs.file == rhs.file) && (lhs.counter == rhs.counter);
+      return (lhs.fp == rhs.fp) && (lhs.counter == rhs.counter);
     }
 
     bool eof() const noexcept
     {
-      return file.eof();
+      return feof(fp);
     }
 
     // This is how end of the iteration is detected (e.g. 'if(i == std::end(reader))': The FileChunkIterator 'i' is the same as 'end()' (which returns a FileChunkIteratorSentinel) if it is at EOF.
@@ -378,8 +304,11 @@ public:
 
   FileChunkIterator begin()
   {
-    // create a new FileHandle from our file descriptor and set position to beginning of file. (This should not affect other FILE* pointers used in any other iterators.)
-    return FileChunkIterator(FileHandle(fd), delimiter);
+    // create a new FILE* from our file descriptor and set position to beginning of file. (This should not affect other FILE* pointers used in any other iterators.)
+    FILE *fp = fdopen(fd, "r");
+    clearerr(fp);
+    rewind(fp);
+    return FileChunkIterator(fp, delimiter);
   }
 
   FileChunkIteratorSentinel end()
