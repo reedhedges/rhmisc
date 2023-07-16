@@ -330,7 +330,7 @@ public:
     if(fd != -1)
     {
       int err = close(fd);
-      assert(err != 0);
+      assert(err == 0);
       //if(err != 0)
       //  throw std::system_error(errno, std::system_category(), STRERROR(errno));
     }
