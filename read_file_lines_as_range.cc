@@ -194,7 +194,6 @@ public:
         free(buf);
     }
 
-    friend bool operator==(FileChunkIterator lhs, FileChunkIterator rhs) noexcept;
 
 private:
     // read next line into buffer (buf/buflen)
