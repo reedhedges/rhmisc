@@ -245,18 +245,18 @@ public:
     }
   
     // post increment:
-    FileChunkIterator& operator++(int) // not noexcept, may throw
+    FileChunkIterator operator++(int) // not noexcept, may throw
     {
-      FileChunkIterator& self = *this;
+      FileChunkIterator selfcopy = *this;
       advance();
-      return self;
+      return selfcopy;
     }
 
-    // needed?
-    //friend bool operator==(const FileChunkIterator& lhs, const FileChunkIterator& rhs) noexcept
-    //{
-    //  return (lhs.file == rhs.file) && (lhs.counter == rhs.counter);
-    //}
+    friend bool operator==(const FileChunkIterator& lhs, const FileChunkIterator& rhs) noexcept
+    {
+      // good comparison?
+      return (lhs.file == rhs.file) && (lhs.counter == rhs.counter);
+    }
 
     bool eof() const noexcept
     {
@@ -269,12 +269,17 @@ public:
       return i.eof();
     }
 
-    // needed?
+    // needed? correct?
     //friend difference_type operator-(const FileChunkIterator& lhs, const FileChunkIterator& rhs) noexcept
     //{
     //  // todo error if open ot different files?
     //  return(lhs.counter - rhs.counter);
     //}
+
+
+    // TODO could implement += by repeated advance(), or scanning file characters for delimiter without reading into buffer.
+
+    // TODO could maybe implement -- by seeking backwards scanning for delimiter.
 
 };
 
