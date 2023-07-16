@@ -73,25 +73,43 @@
 
 
 
-// Just wraps a FILE*, given a file descriptor. Closes the file pointer when destroyed.
+// Just wraps a FILE* stream, given a file descriptor. The state of the new stream (position, errors) is reset so it can be used
+// to begin reading from the beginning of the file. 
+// (Note does not call fclose() on destruction, this would close the underlying file descriptor, and shouldn't be neccesary.)
+// File can only be read, not written.
 // Maybe this could be replaced with fstream.
 struct FileHandle
 {
   FILE *fp = nullptr;
 
-  explicit FileHandle(int fd) 
+private:
+  FILE* openstream(int fd) const noexcept
   {
-    fp = fdopen(fd, "r");
-    clearerr(fp);
-    rewind(fp);
+    FILE *newfp = fdopen(fd, "r");
+    clearerr(newfp);
+    rewind(newfp);
+    return newfp;
   }
 
-  // take provided FILE*. Will be closed on destruction.
-  explicit FileHandle(FILE* fp_) : fp(fp_) {}
+public:
 
-  // we could maybe allow copying and either open a new FILE* from the same file using fdopen(fileno(fp)), or just copy the file pointer and let both FileHandle objects access it?
-  FileHandle(const FileHandle& other) = delete;  
-  FileHandle& operator=(const FileHandle& other) = delete;
+  explicit FileHandle(int fd) 
+  {
+    fp = openstream(fd);
+  }
+
+  // copies: A new FILE* is opened from the same file descriptor as the other FileHandle, 
+  // same as FileHandle(fileno(other.fp));
+  FileHandle(const FileHandle& other) 
+  {
+    fp = openstream(fileno(other.fp));
+  }
+
+  FileHandle& operator=(const FileHandle& other) 
+  {
+    fp = openstream(fileno(other.fp));
+    return *this;
+  }
     
   FileHandle(FileHandle&& old) 
   {
@@ -111,7 +129,7 @@ struct FileHandle
 
   bool operator==(const FileHandle& other) const noexcept { return (other.fp == fp); }
 
-  ~FileHandle() { if(fp) fclose(fp); }
+  // not needed ~FileHandle() { if(fp) fclose(fp); }
 
   FILE* operator*() { return fp; }
 
@@ -167,9 +185,27 @@ public:
       read_line();
     }
     
-    // not copyable
-    FileChunkIterator(const FileChunkIterator& other) = delete;
-    FileChunkIterator& operator=(const FileChunkIterator& other) = delete; 
+    // copy (also copies buffer from other):
+
+    FileChunkIterator(const FileChunkIterator& other)  :
+      file(other.file), // should open new FILE*
+      delimiter(other.delimiter),
+      buflen(other.buflen),
+      counter(other.counter)
+    {
+      buf = (char*) malloc(buflen * sizeof(char));
+      memcpy(buf, other.buf, buflen);
+    }
+
+    FileChunkIterator& operator=(const FileChunkIterator& other)
+    {
+        // todo check that this is right:
+        if(&other != this) 
+            FileChunkIterator(std::forward<const FileChunkIterator&>(other)); 
+        return *this; 
+    }
+
+    // move:
 
     FileChunkIterator(FileChunkIterator&& old) noexcept :
         file(std::move(old.file)),
@@ -330,9 +366,12 @@ public:
     if(fd != -1)
     {
       int err = close(fd);
-      assert(err == 0);
-      //if(err != 0)
-      //  throw std::system_error(errno, std::system_category(), STRERROR(errno));
+      if(err != 0)
+      {
+          fmt::print("FileChunkReader: Warning: error {} closing file descriptor {}: {}\n", errno, fd, STRERROR(errno));
+          // throw std::system_error(errno, std::system_category(), STRERROR(errno));
+          assert(err == 0);
+      }
     }
   }
     
