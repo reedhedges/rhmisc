@@ -33,13 +33,13 @@
 //
 //
 //  Currently multiple FileChunkIterators can separately iterate through the data of the same open file (open file is represented by
-//  FileChunkReader which also provides new begin and end FileChunkIterators; each iterator contains its own FILE* stream pointer.
+//  FileChunkReader which also provides new begin and end FileChunkIterators; each iterator contains its own FILE* stream pointer
+//  and stores the last read file line in its own buffer (which may not be the best design for an iterator.) 
 //  Each FileChunkIterator when advanced reads the next chunk into its own buffer, which can be accessed with
 //  operator*.  
 //
 //  An alternative design would be instead for FileChunkReader to be the only reader of the file, reading new data on request from
-//  any iterator, and providing data from its own buffer.  This would be a bit simpler and might be the more common use case, i.e. multiple
-//  readers (multiple iterators) may not really be neccesary..
+//  any iterator, and providing data from its own buffer. This is probably a cleaner implementation.  For this implementation, see read_file_lines_as_range_2.cc.
 //
 
 
@@ -103,7 +103,8 @@ private:
     FILE* fp = nullptr;
     int delimiter = 0;
     char *buf = nullptr; // allocated by getdelim(), but we must free in destructor
-    size_t buflen = 0;
+    size_t bufsize = 0;
+    size_t bufstrlen = 0;
     difference_type counter = 0;
 
 public:
@@ -115,16 +116,17 @@ public:
       read_line();
     }
     
-    // copy (also copies buffer from other):
+    // copy (also copies buffer contents):
 
     FileChunkIterator(const FileChunkIterator& other)  :
       fp(other.fp),
       delimiter(other.delimiter),
-      buflen(other.buflen),
+      bufsize(other.bufsize),
+      bufstrlen(other.bufstrlen),
       counter(other.counter)
     {
-      buf = (char*) malloc(buflen * sizeof(char));
-      memcpy(buf, other.buf, buflen);
+      buf = (char*) malloc(bufsize * sizeof(char));
+      memcpy(buf, other.buf, bufsize);
     }
 
     FileChunkIterator& operator=(const FileChunkIterator& other)
@@ -141,10 +143,12 @@ public:
         fp(old.fp),
         delimiter(old.delimiter),
         buf(old.buf),
-        buflen(old.buflen)
+        bufsize(old.bufsize),
+        bufstrlen(old.bufstrlen)
     {
       old.buf = nullptr;
-      old.buflen = 0;
+      old.bufsize = 0;
+      old.bufstrlen = 0;
     }
 
     FileChunkIterator& operator=(FileChunkIterator&& old) noexcept 
@@ -162,18 +166,19 @@ public:
 
 
 private:
-    // read next line into buffer (buf/buflen)
+    // read next line into buffer (buf/bufstrlen)
     // todo move to FileChunkReader
     void read_line()
     {
       // todo error if file at eof. (throw?)
-      ssize_t r = getdelim(&buf, &buflen, delimiter, fp);
-      if(r == -1) [[unlikely]]
+      ssize_t r = getdelim(&buf, &bufsize, delimiter, fp);
+      if(r < 0) [[unlikely]]
       {
-        // causes operator* to return a null string view:
-        free(buf);
-        buf = NULL;
-        buflen = 0;
+        // causes operator* to return a null string view. (alternatively, should operator* throw exception after error/eof?)
+        if(buf) free(buf);
+        buf = nullptr;
+        bufsize = 0;
+        bufstrlen = 0;
 
         if(feof(fp))
         {
@@ -181,9 +186,14 @@ private:
         }
         else
         {
+          printf("Error reading file: %d %s\n", errno, STRERROR(errno));
           throw std::system_error(errno, std::system_category(), STRERROR(errno));
         }
 
+      }
+      else
+      {
+        bufstrlen = (size_t)r;
       }
     }
 
@@ -196,12 +206,14 @@ private:
 
 public:
 
+    // Warning: The returned string_view will become invalid when this iterator is advanced. Copy it to std::string or similar
+    // if saving or using it beyond one iteration (e.g. in a range view).
     const value_type operator*() const noexcept
     { 
       // Currently the first line is read by the constructor. this could instead be done here. But would that
       // violate 'const'? Or is it ok if a 'const FileChunkIterator' can't be incremented with ++, but still
       // does internal stuff like file IO and updating 'counter'?
-      return std::string_view(buf, buflen);
+      return std::string_view(buf, bufstrlen);
     }
 
     FileChunkIterator& operator++() // not noexcept, may throw
@@ -224,15 +236,15 @@ public:
       return (lhs.fp == rhs.fp) && (lhs.counter == rhs.counter);
     }
 
-    bool eof() const noexcept
+    bool at_end() const noexcept
     {
-      return feof(fp);
+      return feof(fp) || ferror(fp);
     }
 
     // This is how end of the iteration is detected (e.g. 'if(i == std::end(reader))': The FileChunkIterator 'i' is the same as 'end()' (which returns a std::default_sentinel_t) if it is at EOF.
     friend bool operator==(const FileChunkIterator& i, const std::default_sentinel_t&) noexcept
     {
-      return i.eof();
+      return i.at_end();
     }
 
     // needed? correct?
@@ -291,7 +303,7 @@ public:
     return *this;
   }
 
-  ~FileChunkReader()
+  ~FileChunkReader() noexcept
   {
     if(fd != -1)
     {
@@ -315,7 +327,7 @@ public:
     return FileChunkIterator(fp, delimiter);
   }
 
-  std::default_sentinel_t end()
+  std::default_sentinel_t end() const noexcept
   {
     // todo should we also pass in fd so that FileChunkIterator::operator==() can check that too?
     return std::default_sentinel;  // this is just a global constant instance of default_sentinel_t.
@@ -327,7 +339,7 @@ public:
 namespace std 
 {
   FileChunkIterator begin(FileChunkReader& r) { return r.begin(); }
-  std::default_sentinel_t end(FileChunkReader& r) { return r.end(); }
+  std::default_sentinel_t end(FileChunkReader& r) noexcept { return r.end(); }
 };
 
 
@@ -341,10 +353,10 @@ void test_iterate()
     auto i = fr.begin();
     static_assert(std::input_iterator<FileChunkIterator>);
     // not a  forward iterator static_assert(std::forward_iterator<FileChunkIterator>);
-    //auto r = std::ranges::subrange(fr.begin(), fr.end());
-    for (auto &line : fr)
+    //auto r = std::ranges::subrange(fr.begin(return ), fr.end());
+    for (auto line : fr)
     {
-      fmt::print("\tread line: '{}\n'", line);
+      fmt::print("\tread line ({} chars): '{}\n'", line.length(), line);
     }
     fmt::print("...done.\n");
 }
@@ -352,30 +364,35 @@ void test_iterate()
 
 
 
-// TODO why won't subrange() accept our iterators?
-/*
 void test_range()
 {
     fmt::print("-> test_range reading lines from \"testfile.txt\"...\n");
     FileChunkReader fr("testfile.txt", '\n');
     // strip newlines from ends, filter out short words:
+    using transform_return_type = std::string;
     auto longwords = std::ranges::subrange(fr.begin(), fr.end()) 
-      | std::ranges::transform_view(
-        [](const std::string_view s) -> std::string_view { 
+      | std::ranges::views::transform(
+        // we create a new std::string from the string view, so that each string is copied,
+        // the string_view will become invalid on the next iteration of the iterator.
+        // (though maybe this should be ok if when the range is iterated below it goes through each view
+        // fully before starting the next)
+        [](const std::string_view s) -> transform_return_type { 
+          fmt::print("({}) -> ", s);
+          transform_return_type r;
           if (s.ends_with("\n"))
-            return std::string_view(s, s.length()-1);
+            r = transform_return_type{s.begin(), s.end()-1};
           else
-            return s;
-          // Note if string_view from iterator wasn't const we could use remove_suffix() instead.
+            r = transform_return_type{s};
+          fmt::print("({})\n", r);
+          return r;
         })
-      | std::ranges::filter_view([](const auto s){ return (s.length() > 3); });
-    for (auto &line : longwords)
+      | std::ranges::views::filter([](const auto& s){ return (s.length() > 3); });
+    for (auto line : longwords)
     {
-      fmt::print("\t>3 characters: '{}\n'", line);
+      fmt::print("\t>3 characters ({}): '{}'\n", line.length(), line);
     }
     fmt::print("...done.\n");
 }
-*/
 
 
 
@@ -384,6 +401,7 @@ void test_range()
 int main()
 {
   test_iterate();
+  test_range();
   return 0;
 }
 
